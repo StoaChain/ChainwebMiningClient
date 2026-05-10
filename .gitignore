@@ -4,3 +4,5 @@ hls.log
 .ghci_history
 .ghci
 .DS_Store
+.secrets/
+CLAUDE.md

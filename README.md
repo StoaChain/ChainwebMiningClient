@@ -1,5 +1,7 @@
 # Mining Client for Kadena
 
+> **StoaChain fork notice.** This repository is the [StoaChain](https://github.com/StoaChain) fork of [`kadena-io/chainweb-mining-client`](https://github.com/kadena-io/chainweb-mining-client). **Version `1.0.0`** is a direct fork of upstream Kadena release [`0.7`](https://github.com/kadena-io/chainweb-mining-client/releases/tag/0.7) (commit `ffa1266`) plus the nix flake / haskell.nix modernization PR ([#29](https://github.com/kadena-io/chainweb-mining-client/pull/29)). The mining wire protocol is identical to upstream — the same binary works against a StoaChain node (which preserves the chainweb-node mining API shape) using a different `--node` address. Docker image: `ghcr.io/stoachain/chainweb-mining-client:latest`.
+
 A mining client for Kadena's chainweb node mining API. It supports
 
 * mining with ASICs through a stratum server,

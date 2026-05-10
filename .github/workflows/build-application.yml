@@ -13,7 +13,7 @@ jobs:
       matrix:
         ghc: ['8.10.7', '9.0.2', '9.2', '9.4']
         cabal: ['3.8']
-        os: ['ubuntu-20.04', 'ubuntu-22.04', 'macOS-latest']
+        os: ['ubuntu-22.04', 'macOS-latest']
 
     steps:
     - name: Set Variables
@@ -29,9 +29,9 @@ jobs:
 
     # Setup
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
     - name: Install GHC and Cabal
-      uses: haskell/actions/setup@v2
+      uses: haskell-actions/setup@v2
       with:
          ghc-version: ${{ matrix.ghc }}
          cabal-version: ${{ matrix.cabal }}
@@ -39,7 +39,7 @@ jobs:
       run: |
         ghc --version
         cabal --version
-    - uses: actions/cache@v3
+    - uses: actions/cache@v4
       name: Cache dist-newstyle
       with:
         path: |
@@ -79,7 +79,7 @@ jobs:
         cp cabal.project.freeze $ARTIFACTS_DIR
         tar -C ./artifacts/ -czf "$ARTIFACTS_ARCHIVE" chainweb-mining-client
     - name: Safe artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: ${{ env.ARTIFACTS_NAME }}
         path: ${{ env.ARTIFACTS_ARCHIVE }}
@@ -90,6 +90,9 @@ jobs:
     name: Build and publish docker image
     needs: [build]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
@@ -112,7 +115,7 @@ jobs:
         EOF
 
     - name: Get build artifacts
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: ${{ env.ARTIFACTS_NAME }}
         path: .
@@ -147,12 +150,16 @@ jobs:
       id: meta
       uses: docker/metadata-action@v4
       with:
-        images: ghcr.io/kadena-io/chainweb-mining-client
+        images: ghcr.io/stoachain/chainweb-mining-client
+        flavor: |
+          latest=auto
         tags: |
           type=sha
           type=ref,event=branch
-          type=ref,event=tag
           type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=semver,pattern={{major}}
 
     - name: Login to GitHub Container Registry
       uses: docker/login-action@v2
