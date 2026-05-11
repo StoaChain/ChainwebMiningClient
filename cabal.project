@@ -1,4 +1,10 @@
 packages: .
+
+-- Pin Hackage state to upstream Kadena 0.7 tag date so the dep solver
+-- reproduces the same plan every time. Without this, every fresh build
+-- picks newer-than-tested versions of transitive deps and bit-rots.
+index-state: 2023-06-27T00:00:00Z
+
 allow-newer:
     streaming-events:*
 
