@@ -49,12 +49,12 @@ module Worker.POW.Stratum.Protocol
 
 -- ** Misc Types
 , Agent
-, Username
+, Username(..)
 , Password
 , JobId
 , noJobId
 , nextJobId
-, ClientWorker
+, ClientWorker(..)
 
 -- ** Requests
 , MiningRequest(..)

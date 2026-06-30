@@ -65,9 +65,9 @@ import Worker.POW.Stratum.Server
 -- enough active work items available.
 --
 submitWork :: StratumServerCtx -> Logger -> Nonce -> Target -> ChainId -> Work -> IO Work
-submitWork ctx l nonce trg _cid work = withLogTag l "Stratum Worker" $ \logger ->
+submitWork ctx l nonce trg cid work = withLogTag l "Stratum Worker" $ \logger ->
     let run w = waitForFirst
-            (runJob ctx logger nonce trg w)
+            (runJob ctx logger nonce trg cid w)
             (threadDelay jobRateMicros >> run (incrementTimeMicros jobRateMicros w))
     in run work
   where
@@ -80,9 +80,9 @@ submitWork ctx l nonce trg _cid work = withLogTag l "Stratum Worker" $ \logger -
         Left x -> return x
 
 
-runJob :: StratumServerCtx -> Logger -> Nonce -> Target -> Work -> IO Work
-runJob ctx logger _nonce trg work = mask $ \umask -> do
-    job <- umask $ newJob logger ctx trg work
+runJob :: StratumServerCtx -> Logger -> Nonce -> Target -> ChainId -> Work -> IO Work
+runJob ctx logger _nonce trg cid work = mask $ \umask -> do
+    job <- umask $ newJob logger ctx cid trg work
     flip onException (writeLog logger L.Info ("discarded unfinished job: "  <> sshow (_jobId job))) $
         flip finally (removeJob ctx (_jobId job)) $ umask $ checkJob job
   where
@@ -105,12 +105,12 @@ runJob ctx logger _nonce trg work = mask $ \umask -> do
                     <> ". Continue with job"
                 checkJob job
 
-newJob :: Logger -> StratumServerCtx -> Target -> Work -> IO Job
-newJob logger ctx trg work = do
+newJob :: Logger -> StratumServerCtx -> ChainId -> Target -> Work -> IO Job
+newJob logger ctx cid trg work = do
 
     -- Create new job
     jid <- atomicModifyIORef' (_ctxCurrentId ctx) (\x -> (nextJobId x, x))
-    job <- Job jid trg work <$> newEmptyMVar
+    job <- Job jid trg work cid <$> newEmptyMVar
 
     flip onException (removeJob ctx jid) $ do
 

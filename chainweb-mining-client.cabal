@@ -59,6 +59,8 @@ executable chainweb-mining-client
         Worker.POW.Stratum
         Worker.POW.Stratum.Protocol
         Worker.POW.Stratum.Server
+        Worker.POW.Stratum.PoolEvent
+        Worker.POW.Stratum.EventLog
         Worker.SimulatedMiner
         WorkerUtils
     autogen-modules:
@@ -80,6 +82,7 @@ executable chainweb-mining-client
         , configuration-tools >=0.5
         , connection >=0.3
         , cryptonite >=0.27
+        , directory >=1.3
         , deeproute
         , deeproute:deeproute-wai
         , exceptions >=0.10

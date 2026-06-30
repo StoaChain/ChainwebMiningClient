@@ -57,6 +57,9 @@ import Text.Read
 
 -- internal modules
 
+import Data.Time.Clock (getCurrentTime)
+import Data.Time.Format.ISO8601 (iso8601Show)
+
 import JsonRpc
 import Logger
 import Target
@@ -64,6 +67,8 @@ import Utils
 import Worker
 import WorkerUtils
 import Worker.POW.Stratum.Protocol
+import Worker.POW.Stratum.PoolEvent (shareEvent, blockEvent)
+import Worker.POW.Stratum.EventLog (PoolEventSink)
 
 -- -------------------------------------------------------------------------- --
 -- Clients and Shares
@@ -121,6 +126,10 @@ data Job = Job
     { _jobId :: !JobId
     , _jobTarget :: !Target
     , _jobWork :: !Work
+    , _jobChainId :: !ChainId
+        -- ^ the chain this work was fetched for (threaded from the mining loop's
+        -- decoded ChainId, NOT decoded from the work-header bytes). Carried so the
+        -- 2.0.0 pool emit tags each share/block with its real chain.
     , _jobResult :: !(MVar Nonce)
     }
 
@@ -130,7 +139,7 @@ incrementJobTime i job = job
     }
 
 noopJob :: Job
-noopJob = unsafePerformIO $ Job noJobId nullTarget (Work "") <$> newEmptyMVar
+noopJob = unsafePerformIO $ Job noJobId nullTarget (Work "") (ChainId 0) <$> newEmptyMVar
 {-# NOINLINE noopJob #-}
 
 -- | Stratum Server Context
@@ -195,16 +204,23 @@ data StratumServerCtx = StratumServerCtx
         -- ^ Rate in milliseconds at which a jobs for a given work item are
         -- emitted. Note that each indiviual stratum worker will emit jobs at
         -- this rate.
+
+    , _ctxEmit :: !PoolEventSink
+        -- ^ the 2.0.0 pool accounting sink: each accepted share / solved block is
+        -- handed here for the keyless accounting sidecar (non-blocking; a no-op
+        -- when the event log is disabled). Adding this does not change how the
+        -- server distributes work, sets difficulty, or submits blocks.
     }
 
-newStratumServerCtx :: StratumDifficulty -> Natural -> IO StratumServerCtx
-newStratumServerCtx spec rate = StratumServerCtx
+newStratumServerCtx :: StratumDifficulty -> Natural -> PoolEventSink -> IO StratumServerCtx
+newStratumServerCtx spec rate emit = StratumServerCtx
     (\_ _ -> return (Right ()))
     <$> newTVarIO mempty
     <*> newTVarIO noopJob
     <*> newIORef noJobId
     <*> pure spec
     <*> pure rate
+    <*> pure emit
 
 -- -------------------------------------------------------------------------- --
 -- Sessions
@@ -600,6 +616,17 @@ session l ctx app = withLogTag l "Stratum Session" $ \l2 -> withLogTag l2 (sshow
                                 <> "; work: " <> sshow finalWork
                                 <> "; target: " <> sshow (_jobTarget job)
 
+                            -- 2.0.0 pool accounting (D1): emit a SHARE event for EVERY
+                            -- accepted submit. Non-blocking; a no-op when the event log
+                            -- is disabled. This is OFF the work/difficulty/submit hot
+                            -- path — the only added side effect at the accept site.
+                            poolTs <- T.pack . iso8601Show <$> getCurrentTime
+                            let poolUser = (\(Username t) -> t) _u
+                                poolWorker = T.dropWhile (== '.') ((\(ClientWorker t) -> t) _w)
+                                poolChain = (\(ChainId c) -> T.pack (show c)) (_jobChainId job)
+                                poolTarget = (\(Target nat) -> T.pack (show nat)) (_jobTarget job)
+                            _ctxEmit ctx (shareEvent poolUser poolWorker poolChain poolTarget poolTs)
+
                             -- Check whether it is a solution for the job and
                             -- only submit if it is. We do this here in order to
                             -- fail early and avoid contention on the job result
@@ -612,6 +639,12 @@ session l ctx app = withLogTag l "Stratum Session" $ \l2 -> withLogTag l2 (sshow
                                     reply app $ SubmitResponse mid (Right True)
                                 True -> do
                                     writeLog jlog L.Info $ "solved block: nonce2:" <> sshow n2 <> "; nonce: " <> sshow n
+                                    -- 2.0.0 pool accounting (D1/D2): a SEPARATE block
+                                    -- event carrying the engine's OWN nonce + chainId
+                                    -- only (the sidecar resolves the node-canonical
+                                    -- {height,hash} by scanning for this nonce). Does
+                                    -- NOT record a share — the share event above did.
+                                    _ctxEmit ctx (blockEvent poolUser poolWorker poolChain poolTarget ((\(Nonce wd) -> T.pack (show wd)) n) poolTs)
                                     -- Yeah, we've solved a block
                                     -- Commit final result to job
                                     void $ tryPutMVar (_jobResult job) n
@@ -626,10 +659,11 @@ withStratumServer
     -> HostPreference
     -> StratumDifficulty
     -> Natural
+    -> PoolEventSink
     -> (StratumServerCtx -> IO ())
     -> IO ()
-withStratumServer l port host spec rate inner = withLogTag l "Stratum Server" $ \logger -> do
-    ctx <- newStratumServerCtx spec rate
+withStratumServer l port host spec rate emit inner = withLogTag l "Stratum Server" $ \logger -> do
+    ctx <- newStratumServerCtx spec rate emit
     race (server logger ctx) (inner ctx) >>= \case
         Left _ -> writeLog logger L.Error "server exited unexpectedly"
         Right _ -> do

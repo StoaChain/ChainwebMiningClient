@@ -92,6 +92,9 @@ import Worker.SimulatedMiner
 import Worker.OnDemand
 import qualified Worker.POW.Stratum as Stratum
 import qualified Worker.POW.Stratum.Server as Stratum
+import qualified Worker.POW.Stratum.EventLog as Stratum
+
+import System.Environment (lookupEnv)
 
 -- -------------------------------------------------------------------------- --
 -- Integral Unit Prefixes
@@ -845,11 +848,18 @@ run conf logger = do
             withOnDemandWorker logger (_configOnDemandPort conf) (_configOnDemandInterface conf) f
         ExternalWorker -> f $ \l -> externalWorker l (_configExternalWorkerCommand conf)
         CpuWorker -> f $ cpuWorker @Blake2s_256
-        StratumWorker -> Stratum.withStratumServer
-          logger
-          (_configStratumPort conf)
-          (_configStratumInterface conf)
-          (_configStratumDifficulty conf)
-          (_configStratumRate conf)
-          (f . Stratum.submitWork)
+        StratumWorker -> do
+          -- 2.0.0 pool accounting: the keyless sidecar tails this NDJSON event log.
+          -- Path from POOL2_EVENT_LOG_PATH (operator/container env); absent → the
+          -- emit is a no-op and the engine behaves like the un-patched solo binary.
+          mEventLogPath <- lookupEnv "POOL2_EVENT_LOG_PATH"
+          Stratum.withEventLog logger mEventLogPath $ \sink ->
+            Stratum.withStratumServer
+              logger
+              (_configStratumPort conf)
+              (_configStratumInterface conf)
+              (_configStratumDifficulty conf)
+              (_configStratumRate conf)
+              sink
+              (f . Stratum.submitWork)
 
