@@ -38,8 +38,10 @@ module Worker.POW.Stratum.EventLog
 
 import Control.Concurrent.Async (withAsync, link)
 import Control.Concurrent.STM
+import Control.Concurrent.STM.TBQueue (tryWriteTBQueue)
 import Control.Exception (SomeException, try)
 import Control.Monad (when)
+import Data.Int (Int64)
 import Data.IORef
 import qualified Data.ByteString.Lazy as LB
 import qualified Data.Text as T
@@ -70,7 +72,7 @@ queueCapacity = 65536
 -- kept (overwritten on the next rotation), so on-disk size is bounded at ~2x
 -- this. Large enough that the always-caught-up sidecar has consumed the file
 -- long before a rotation drops it.
-rotateBytes :: Integer
+rotateBytes :: Int64
 rotateBytes = 256 * 1024 * 1024
 
 -- | How often (in events written) to flush the dropped-count operator signal.
@@ -146,7 +148,7 @@ writerLoop logger path q dropped = do
         IO.hSetBuffering h (IO.BlockBuffering Nothing)
         return h
 
-    currentSize :: FilePath -> IO Integer
+    currentSize :: FilePath -> IO Int64
     currentSize p = doesFileExist p >>= \case
-        True -> getFileSize p
+        True -> fromInteger <$> getFileSize p
         False -> return 0
